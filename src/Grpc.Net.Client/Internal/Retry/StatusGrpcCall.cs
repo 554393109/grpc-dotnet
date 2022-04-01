@@ -16,10 +16,6 @@
 
 #endregion
 
-using System;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using Grpc.Core;
 
 #if NETSTANDARD2_0
@@ -38,6 +34,7 @@ namespace Grpc.Net.Client.Internal.Retry
 
         public IClientStreamWriter<TRequest>? ClientStreamWriter => _clientStreamWriter ??= new StatusClientStreamWriter(_status);
         public IAsyncStreamReader<TResponse>? ClientStreamReader => _clientStreamReader ??= new StatusStreamReader(_status);
+        public bool Disposed => true;
 
         public StatusGrpcCall(Status status)
         {

@@ -16,15 +16,9 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
+using System.Globalization;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Google.Protobuf;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Core;
@@ -193,18 +187,21 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             // Act
             var call = client.DuplexData();
 
-            await ExceptionAssert.ThrowsAsync<Exception>(async () =>
+            await TestHelpers.AssertIsTrueRetryAsync(async () =>
             {
-                await call.RequestStream.WriteAsync(new UnimplementeDataMessage
+                try
                 {
-                    Data = ByteString.CopyFrom(CreateTestData(1024 * 64))
-                }).DefaultTimeout();
-
-                await call.RequestStream.WriteAsync(new UnimplementeDataMessage
+                    await call.RequestStream.WriteAsync(new UnimplementeDataMessage
+                    {
+                        Data = ByteString.CopyFrom(CreateTestData(1024 * 64))
+                    }).DefaultTimeout();
+                    return false;
+                }
+                catch
                 {
-                    Data = ByteString.CopyFrom(CreateTestData(1024 * 64))
-                }).DefaultTimeout();
-            });
+                    return true;
+                }
+            }, "Write until error.", Logger);
 
             await call.ResponseHeadersAsync.DefaultTimeout();
 
@@ -350,10 +347,17 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
                 return false;
             });
 
+            using var httpEventListener = new HttpEventSourceListener(LoggerFactory);
+
             var tcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
             async Task<DataComplete> ClientStreamedData(IAsyncStreamReader<DataMessage> requestStream, ServerCallContext context)
             {
-                context.CancellationToken.Register(() => tcs.SetResult(null));
+                Logger.LogInformation("Server started");
+                context.CancellationToken.Register(() =>
+                {
+                    Logger.LogInformation("Server completed TCS");
+                    tcs.SetResult(null);
+                });
 
                 var total = 0L;
                 await foreach (var message in requestStream.ReadAllAsync())
@@ -378,7 +382,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             var method = Fixture.DynamicGrpc.AddClientStreamingMethod<DataMessage, DataComplete>(ClientStreamedData, "ClientStreamedDataTimeout");
 
             var httpClient = Fixture.CreateClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(0.3);
+            httpClient.Timeout = TimeSpan.FromSeconds(0.5);
 
             var channel = GrpcChannel.ForAddress(httpClient.BaseAddress!, new GrpcChannelOptions
             {
@@ -396,8 +400,10 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             // Act
             var call = client.ClientStreamingCall();
 
+            Logger.LogInformation("Client writing message");
             await call.RequestStream.WriteAsync(dataMessage).DefaultTimeout();
 
+            Logger.LogInformation("Client waiting for TCS to complete");
             await tcs.Task.DefaultTimeout();
 
             var ex = await ExceptionAssert.ThrowsAsync<RpcException>(() => call.RequestStream.WriteAsync(dataMessage)).DefaultTimeout();
@@ -615,7 +621,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             await Task.Delay(100);
 
             var clientException = await ExceptionAssert.ThrowsAsync<RpcException>(() => call.ResponseStream.MoveNext()).DefaultTimeout();
-            Assert.AreEqual(StatusCode.Unavailable, clientException.StatusCode);
+            Assert.AreEqual(StatusCode.Internal, clientException.StatusCode);
         }
 
         [TestCase(true)]
@@ -761,7 +767,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             await Task.Delay(100);
 
             var clientException = await ExceptionAssert.ThrowsAsync<RpcException>(() => call.RequestStream.WriteAsync(new DataMessage())).DefaultTimeout();
-            Assert.AreEqual(StatusCode.Unavailable, clientException.StatusCode);
+            Assert.AreEqual(StatusCode.Internal, clientException.StatusCode);
         }
 
         [Test]
@@ -851,9 +857,9 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             // Act
             var call = client.DuplexStreamingCall();
 
-            await call.RequestStream.WriteAsync(new DataMessage { Data = ByteString.CopyFrom(Encoding.UTF8.GetBytes("Hello world")) });
+            await call.RequestStream.WriteAsync(new DataMessage { Data = ByteString.CopyFrom(Encoding.UTF8.GetBytes("Hello world")) }).DefaultTimeout();
 
-            await call.ResponseStream.MoveNext();
+            await call.ResponseStream.MoveNext().DefaultTimeout();
 
             var cts = new CancellationTokenSource();
             var task = call.ResponseStream.MoveNext(cts.Token);
@@ -861,11 +867,11 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             cts.Cancel();
 
             // Assert
-            var clientEx = await ExceptionAssert.ThrowsAsync<RpcException>(() => task);
+            var clientEx = await ExceptionAssert.ThrowsAsync<RpcException>(() => task).DefaultTimeout();
             Assert.AreEqual(StatusCode.Cancelled, clientEx.StatusCode);
             Assert.AreEqual("Call canceled by the client.", clientEx.Status.Detail);
 
-            var serverEx = await ExceptionAssert.ThrowsAsync<Exception>(() => tcs.Task);
+            var serverEx = await ExceptionAssert.ThrowsAsync<Exception>(() => tcs.Task).DefaultTimeout();
             if (serverEx is IOException)
             {
                 // Cool
@@ -890,7 +896,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             return data;
         }
 
-#if NET5_0
+#if NET5_0_OR_GREATER
         [Test]
         public Task MaxConcurrentStreams_StartConcurrently_AdditionalConnectionsCreated()
         {
@@ -907,10 +913,22 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
         {
             var streamCount = 201;
             var count = 0;
+            var contexts = new (AsyncDuplexStreamingCall<DataMessage, DataMessage> Call, string Id, bool ReceivedOnServer)[streamCount];
             var tcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             async Task WaitForAllStreams(IAsyncStreamReader<DataMessage> requestStream, IServerStreamWriter<DataMessage> responseStream, ServerCallContext context)
             {
+                var callId = context.RequestHeaders.GetValue("call-id");
+
+                for (var i = 0; i < contexts.Length; i++)
+                {
+                    if (contexts[i].Id == callId)
+                    {
+                        contexts[i].ReceivedOnServer = true;
+                    }
+                }
+                Logger.LogInformation($"Received {callId}");
+
                 Interlocked.Increment(ref count);
 
                 if (writeResponseHeaders)
@@ -933,14 +951,19 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
 
             var client = TestClientFactory.Create(channel, method);
 
-            var calls = new AsyncDuplexStreamingCall<DataMessage, DataMessage>[streamCount];
             try
             {
                 // Act
-                for (var i = 0; i < calls.Length; i++)
+                for (var i = 0; i < contexts.Length; i++)
                 {
-                    var call = client.DuplexStreamingCall();
-                    calls[i] = call;
+                    var callId = (i + 1).ToString(CultureInfo.InvariantCulture);
+                    Logger.LogInformation($"Sending {callId}");
+
+                    var call = client.DuplexStreamingCall(new CallOptions(headers: new Metadata
+                    {
+                        new Metadata.Entry("call-id", callId)
+                    }));
+                    contexts[i] = (call, callId, false);
 
                     if (writeResponseHeaders)
                     {
@@ -949,17 +972,27 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
                 }
 
                 // Assert
-                await Task.WhenAll(calls.Select(c => c.ResponseHeadersAsync)).DefaultTimeout();
+                await Task.WhenAll(contexts.Select(c => c.Call.ResponseHeadersAsync)).DefaultTimeout();
             }
             catch (Exception ex)
             {
-                throw new Exception($"Received {count} of {streamCount} on the server.", ex);
+                var callIdsNotOnServer = new List<string>();
+                foreach (var context in contexts)
+                {
+                    if (!context.ReceivedOnServer)
+                    {
+                        callIdsNotOnServer.Add(context.Id);
+                    }
+                }
+
+                throw new Exception($"Received {count} of {streamCount} on the server. Call IDs not received by server: {string.Join(", ", callIdsNotOnServer)}", ex);
             }
             finally
             {
-                for (var i = 0; i < calls.Length; i++)
+                Logger.LogInformation("Test over. Disposing calls.");
+                for (var i = 0; i < contexts.Length; i++)
                 {
-                    calls[i].Dispose();
+                    contexts[i].Call.Dispose();
                 }
             }
         }

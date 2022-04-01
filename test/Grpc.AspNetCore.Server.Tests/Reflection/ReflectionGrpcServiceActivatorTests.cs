@@ -16,11 +16,6 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Greet;
 using Grpc.AspNetCore.Server.Tests.Infrastructure;
 using Grpc.Core;
@@ -30,8 +25,6 @@ using Grpc.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace Grpc.AspNetCore.Server.Tests.Reflection
@@ -41,6 +34,56 @@ namespace Grpc.AspNetCore.Server.Tests.Reflection
     {
         [Test]
         public async Task Create_ConfiguredGrpcEndpoint_EndpointReturnedFromReflectionService()
+        {
+            // Arrange and act
+            TestServerStreamWriter<ServerReflectionResponse> writer = await ConfigureReflectionServerAndCallAsync(builder =>
+            {
+                builder.MapGrpcService<GreeterService>();
+            });
+
+            // Assert
+            Assert.AreEqual(1, writer.Responses.Count);
+            Assert.AreEqual(1, writer.Responses[0].ListServicesResponse.Service.Count);
+
+            var serviceResponse = writer.Responses[0].ListServicesResponse.Service[0];
+            Assert.AreEqual("greet.Greeter", serviceResponse.Name);
+        }
+
+        [Test]
+        public async Task Create_ConfiguredGrpcEndpointWithMultipleInheritenceLevel_EndpointReturnedFromReflectionService()
+        {
+            // Arrange and act
+            TestServerStreamWriter<ServerReflectionResponse> writer = await ConfigureReflectionServerAndCallAsync(builder =>
+            {
+                builder.MapGrpcService<InheritGreeterService>();
+            });
+
+            // Assert
+            Assert.AreEqual(1, writer.Responses.Count);
+            Assert.AreEqual(1, writer.Responses[0].ListServicesResponse.Service.Count);
+
+            var serviceResponse = writer.Responses[0].ListServicesResponse.Service[0];
+            Assert.AreEqual("greet.Greeter", serviceResponse.Name);
+        }
+
+        [Test]
+        public async Task Create_ConfiguredGrpcEndpointWithBaseType_EndpointReturnedFromReflectionService()
+        {
+            // Arrange and act
+            TestServerStreamWriter<ServerReflectionResponse> writer = await ConfigureReflectionServerAndCallAsync(builder =>
+            {
+                builder.MapGrpcService<GreeterServiceWithBaseType>();
+            });
+
+            // Assert
+            Assert.AreEqual(1, writer.Responses.Count);
+            Assert.AreEqual(1, writer.Responses[0].ListServicesResponse.Service.Count);
+
+            var serviceResponse = writer.Responses[0].ListServicesResponse.Service[0];
+            Assert.AreEqual("greet.ThirdGreeterWithBaseType", serviceResponse.Name);
+        }
+
+        private static async Task<TestServerStreamWriter<ServerReflectionResponse>> ConfigureReflectionServerAndCallAsync(Action<IEndpointRouteBuilder> action)
         {
             // Arrange
             var endpointRouteBuilder = new TestEndpointRouteBuilder();
@@ -56,7 +99,8 @@ namespace Grpc.AspNetCore.Server.Tests.Reflection
             var serviceProvider = services.BuildServiceProvider(validateScopes: true);
 
             endpointRouteBuilder.ServiceProvider = serviceProvider;
-            endpointRouteBuilder.MapGrpcService<GreeterService>();
+
+            action(endpointRouteBuilder);
 
             // Act
             var service = serviceProvider.GetRequiredService<ReflectionServiceImpl>();
@@ -73,12 +117,16 @@ namespace Grpc.AspNetCore.Server.Tests.Reflection
 
             await service.ServerReflectionInfo(reader, writer, context);
 
-            // Assert
-            Assert.AreEqual(1, writer.Responses.Count);
-            Assert.AreEqual(1, writer.Responses[0].ListServicesResponse.Service.Count);
+            return writer;
+        }
 
-            var serviceResponse = writer.Responses[0].ListServicesResponse.Service[0];
-            Assert.AreEqual("greet.Greeter", serviceResponse.Name);
+        private class InheritGreeterService : GreeterService
+        {
+        }
+
+        private class GreeterServiceWithBaseType : ThirdGreeterWithBaseType.ThirdGreeterWithBaseTypeBase
+        {
+
         }
 
         private class GreeterService : Greeter.GreeterBase
@@ -87,11 +135,7 @@ namespace Grpc.AspNetCore.Server.Tests.Reflection
 
         private class TestAsyncStreamReader : IAsyncStreamReader<ServerReflectionRequest>
         {
-            // IAsyncStreamReader<T> should declare Current as nullable
-            // Suppress warning when overriding interface definition
-#pragma warning disable CS8613, CS8766 // Nullability of reference types in return type doesn't match implicitly implemented member.
-            public ServerReflectionRequest? Current { get; set; }
-#pragma warning restore CS8613, CS8766 // Nullability of reference types in return type doesn't match implicitly implemented member.
+            public ServerReflectionRequest Current { get; set; } = default!;
             private bool _hasNext = true;
 
             public void Dispose()
@@ -121,6 +165,21 @@ namespace Grpc.AspNetCore.Server.Tests.Reflection
             {
                 throw new NotImplementedException();
             }
+        }
+    }
+}
+
+namespace Greet
+{
+    public class ThirdGreeterBaseType
+    {
+
+    }
+
+    public static partial class ThirdGreeterWithBaseType
+    {
+        public partial class ThirdGreeterWithBaseTypeBase : ThirdGreeterBaseType
+        {
         }
     }
 }

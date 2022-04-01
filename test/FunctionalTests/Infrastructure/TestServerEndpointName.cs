@@ -23,6 +23,12 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
         Http2,
         Http1,
         Http2WithTls,
-        Http1WithTls
+        Http1WithTls,
+#if NET5_0_OR_GREATER
+        UnixDomainSocket,
+#endif
+#if NET6_0_OR_GREATER
+        Http3WithTls,
+#endif
     }
 }

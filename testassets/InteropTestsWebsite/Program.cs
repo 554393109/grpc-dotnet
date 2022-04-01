@@ -16,15 +16,7 @@
 
 #endregion
 
-using System;
-using System.IO;
-using Microsoft.AspNetCore;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace InteropTestsWebsite
 {
@@ -51,6 +43,7 @@ namespace InteropTestsWebsite
                         // by gRPC interop servers.
                         var http2Port = context.Configuration.GetValue<int>("port", 50052);
                         var http1Port = context.Configuration.GetValue<int>("port_http1", -1);
+                        var http3Port = context.Configuration.GetValue<int>("port_http3", -1);
                         var useTls = context.Configuration.GetValue<bool>("use_tls", false);
 
                         options.Limits.MinRequestBodyDataRate = null;
@@ -58,6 +51,10 @@ namespace InteropTestsWebsite
                         if (http1Port != -1)
                         {
                             options.ListenAnyIP(http1Port, o => ConfigureEndpoint(o, useTls, HttpProtocols.Http1));
+                        }
+                        if (http3Port != -1)
+                        {
+                            options.ListenAnyIP(http3Port, o => ConfigureEndpoint(o, useTls, HttpProtocols.Http3));
                         }
 
                         void ConfigureEndpoint(ListenOptions listenOptions, bool useTls, HttpProtocols httpProtocols)

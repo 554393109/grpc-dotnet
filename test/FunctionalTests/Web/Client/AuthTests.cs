@@ -16,13 +16,9 @@
 
 #endregion
 
-using System;
-using System.Threading.Tasks;
 using Authorize;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Core;
-using Grpc.Gateway.Testing;
-using Grpc.Net.Client;
 using Grpc.Tests.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
@@ -32,9 +28,18 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Client
 {
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http3WithTls)]
+#endif
     public class AuthTests : GrpcWebFunctionalTestBase
     {
         public AuthTests(GrpcTestMode grpcTestMode, TestServerEndpointName endpointName)
@@ -45,6 +50,8 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Client
         [Test]
         public async Task SendUnauthenticatedRequest_UnauthenticatedErrorResponse()
         {
+            using var httpEventListener = new HttpEventSourceListener(LoggerFactory);
+
             SetExpectedErrorsFilter(writeContext =>
             {
                 // This error can happen if the server returns an unauthorized response

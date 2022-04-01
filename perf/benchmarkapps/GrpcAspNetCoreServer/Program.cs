@@ -16,16 +16,10 @@
 
 #endregion
 
-using System;
-using System.IO;
 using System.Reflection;
 using Common;
-using Microsoft.AspNetCore;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 namespace GrpcAspNetCoreServer
 {
@@ -102,7 +96,7 @@ namespace GrpcAspNetCoreServer
                         Console.WriteLine($"Console Logging enabled with level '{logLevel}'");
 
                         loggerFactory
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
                             .AddSimpleConsole(o => o.TimestampFormat = "ss.ffff ")
 #else
                             .AddConsole(o => o.TimestampFormat = "ss.ffff ")
@@ -122,6 +116,9 @@ namespace GrpcAspNetCoreServer
 
         private static void ConfigureListenOptions(ListenOptions listenOptions, IConfigurationRoot config, System.Net.IPEndPoint endPoint)
         {
+            var basePath = Path.GetDirectoryName(typeof(Program).Assembly.Location);
+            var certPath = Path.Combine(basePath!, "Certs", "server1.pfx");
+
             var protocol = config["protocol"] ?? "";
             bool.TryParse(config["enableCertAuth"], out var enableCertAuth);
 
@@ -132,17 +129,30 @@ namespace GrpcAspNetCoreServer
             {
                 listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
 
-                var basePath = Path.GetDirectoryName(typeof(Program).Assembly.Location);
-                var certPath = Path.Combine(basePath!, "Certs/testCert.pfx");
-                listenOptions.UseHttps(certPath, "testPassword", httpsOptions =>
+                listenOptions.UseHttps(certPath, "1111", httpsOptions =>
                 {
                     if (enableCertAuth)
                     {
-                        httpsOptions.ClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.AllowCertificate;
+                        httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
                         httpsOptions.AllowAnyClientCertificate();
                     }
                 });
             }
+#if NET6_0_OR_GREATER
+            else if (protocol.Equals("h3", StringComparison.OrdinalIgnoreCase))
+            {
+                listenOptions.Protocols = HttpProtocols.Http1AndHttp2AndHttp3;
+
+                listenOptions.UseHttps(certPath, "1111", httpsOptions =>
+                {
+                    if (enableCertAuth)
+                    {
+                        httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+                        httpsOptions.AllowAnyClientCertificate();
+                    }
+                });
+            }
+#endif
             else if (protocol.Equals("h2c", StringComparison.OrdinalIgnoreCase))
             {
                 listenOptions.Protocols = HttpProtocols.Http2;

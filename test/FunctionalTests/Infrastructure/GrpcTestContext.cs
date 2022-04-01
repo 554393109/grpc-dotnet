@@ -16,11 +16,7 @@
 
 #endregion
 
-using System;
-using System.Collections;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -59,7 +55,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
                     }
                     else if (category.StartsWith("Microsoft") || category.StartsWith("System"))
                     {
-                        return l >= LogLevel.Debug;
+                        return l >= LogLevel.Trace;
                     }
 
                     return true;

@@ -16,12 +16,8 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Globalization;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
@@ -39,9 +35,10 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
     [TestFixture]
     public class HedgingTests : FunctionalTestBase
     {
+        [TestCase(null)]
         [TestCase(0)]
         [TestCase(20)]
-        public async Task Unary_ExceedAttempts_Failure(int hedgingDelay)
+        public async Task Unary_ExceedAttempts_Failure(int? hedgingDelay)
         {
             Task<DataMessage> UnaryFailure(DataMessage request, ServerCallContext context)
             {
@@ -57,7 +54,10 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             // Arrange
             var method = Fixture.DynamicGrpc.AddUnaryMethod<DataMessage, DataMessage>(UnaryFailure);
 
-            var channel = CreateChannel(serviceConfig: ServiceConfigHelpers.CreateHedgingServiceConfig(maxAttempts: 5, hedgingDelay: TimeSpan.FromMilliseconds(hedgingDelay)));
+            var delay = (hedgingDelay == null)
+                ? (TimeSpan?)null
+                : TimeSpan.FromMilliseconds(hedgingDelay.Value);
+            var channel = CreateChannel(serviceConfig: ServiceConfigHelpers.CreateHedgingServiceConfig(maxAttempts: 5, hedgingDelay: delay));
 
             var client = TestClientFactory.Create(channel, method);
 
@@ -232,7 +232,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
 
                 return Task.FromException<DataMessage>(new RpcException(new Status(StatusCode.DeadlineExceeded, ""), new Metadata
                 {
-                    new Metadata.Entry(GrpcProtocolConstants.RetryPushbackHeader, TimeSpan.FromSeconds(10).TotalMilliseconds.ToString())
+                    new Metadata.Entry(GrpcProtocolConstants.RetryPushbackHeader, TimeSpan.FromSeconds(10).TotalMilliseconds.ToString(CultureInfo.InvariantCulture))
                 }));
             }
 
@@ -270,7 +270,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
 
                 return Task.FromException(new RpcException(new Status(StatusCode.DeadlineExceeded, ""), new Metadata
                 {
-                    new Metadata.Entry(GrpcProtocolConstants.RetryPushbackHeader, TimeSpan.FromSeconds(10).TotalMilliseconds.ToString())
+                    new Metadata.Entry(GrpcProtocolConstants.RetryPushbackHeader, TimeSpan.FromSeconds(10).TotalMilliseconds.ToString(CultureInfo.InvariantCulture))
                 }));
             }
 
@@ -285,7 +285,8 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             var client = TestClientFactory.Create(channel, method);
 
             // Act
-            var call = client.DuplexStreamingCall(new CallOptions(deadline: DateTime.UtcNow.AddMilliseconds(300)));
+            var deadlineTimeout = 500;
+            var call = client.DuplexStreamingCall(new CallOptions(deadline: DateTime.UtcNow.AddMilliseconds(deadlineTimeout)));
 
             // Assert
             var ex = await ExceptionAssert.ThrowsAsync<RpcException>(() => call.ResponseStream.MoveNext(CancellationToken.None)).DefaultTimeout();

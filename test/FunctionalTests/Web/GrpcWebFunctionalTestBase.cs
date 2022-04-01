@@ -16,11 +16,10 @@
 
 #endregion
 
-using System;
-using System.Net.Http;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
+using NUnit.Framework;
 
 namespace Grpc.AspNetCore.FunctionalTests.Web
 {
@@ -40,13 +39,48 @@ namespace Grpc.AspNetCore.FunctionalTests.Web
         {
             GrpcTestMode = grpcTestMode;
             EndpointName = endpointName;
+
+#if NET6_0_OR_GREATER
+            if (endpointName == TestServerEndpointName.Http3WithTls &&
+                !RequireHttp3Attribute.IsSupported(out var message))
+            {
+                Assert.Ignore(message);
+            }
+#endif
         }
 
         protected HttpClient CreateGrpcWebClient()
         {
-            var protocol = EndpointName == TestServerEndpointName.Http1
-                ? new Version(1, 1)
-                : new Version(2, 0);
+            var grpcWebHandler = CreateGrpcWebHandlerCore();
+
+            return Fixture.CreateClient(EndpointName, grpcWebHandler);
+        }
+
+        protected (HttpMessageHandler handler, Uri address) CreateGrpcWebHandler()
+        {
+            var grpcWebHandler = CreateGrpcWebHandlerCore();
+
+            return Fixture.CreateHandler(EndpointName, grpcWebHandler);
+        }
+
+        private GrpcWebHandler? CreateGrpcWebHandlerCore()
+        {
+            Version protocol;
+
+            if (EndpointName == TestServerEndpointName.Http1)
+            {
+                protocol = new Version(1, 1);
+            }
+#if NET6_0_OR_GREATER
+            else if (EndpointName == TestServerEndpointName.Http3WithTls)
+            {
+                protocol = new Version(3, 0);
+            }
+#endif
+            else
+            {
+                protocol = new Version(2, 0);
+            }
 
             GrpcWebHandler? grpcWebHandler = null;
             if (GrpcTestMode != GrpcTestMode.Grpc)
@@ -58,7 +92,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Web
                 };
             }
 
-            return Fixture.CreateClient(EndpointName, grpcWebHandler);
+            return grpcWebHandler;
         }
 
         protected GrpcChannel CreateGrpcWebChannel()

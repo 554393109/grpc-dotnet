@@ -16,7 +16,6 @@
 
 #endregion
 
-using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Grpc.Core;
@@ -66,7 +65,7 @@ namespace Grpc.Shared.Server
             return null;
         }
 
-#if NET5_0
+#if NET5_0_OR_GREATER
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2075:UnrecognizedReflectionPattern",
             Justification = "Fallback doesn't have BindServiceMethodAttribute so can't be verified.")]
 #endif

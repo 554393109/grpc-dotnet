@@ -16,9 +16,7 @@
 
 #endregion
 
-using System;
-using System.Threading.Tasks;
-using Grpc.AspNetCore.Server.Model;
+using System.Diagnostics.CodeAnalysis;
 using Grpc.Core;
 using Grpc.Shared.Server;
 using Microsoft.AspNetCore.Http;
@@ -29,7 +27,11 @@ using Microsoft.Net.Http.Headers;
 
 namespace Grpc.AspNetCore.Server.Internal.CallHandlers
 {
-    internal abstract class ServerCallHandlerBase<TService, TRequest, TResponse>
+    internal abstract class ServerCallHandlerBase<
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(GrpcProtocolConstants.ServiceAccessibility)]
+#endif
+        TService, TRequest, TResponse>
         where TService : class
         where TRequest : class
         where TResponse : class
@@ -54,7 +56,11 @@ namespace Grpc.AspNetCore.Server.Internal.CallHandlers
                 return ProcessInvalidContentTypeRequest(httpContext, error);
             }
 
-            if (!GrpcProtocolConstants.IsHttp2(httpContext.Request.Protocol))
+            if (!GrpcProtocolConstants.IsHttp2(httpContext.Request.Protocol)
+#if NET6_0_OR_GREATER
+                && !GrpcProtocolConstants.IsHttp3(httpContext.Request.Protocol)
+#endif
+                )
             {
                 return ProcessNonHttp2Request(httpContext);
             }

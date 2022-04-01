@@ -16,28 +16,25 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using Grpc.AspNetCore.Server.Internal;
+using Grpc.Core.Interceptors;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Grpc.AspNetCore.Server
 {
     /// <summary>
-    /// Representation of a registration of the interceptor in the pipeline.
+    /// Representation of a registration of an <see cref="Interceptor"/> in the server pipeline.
     /// </summary>
     public class InterceptorRegistration
     {
-#if NET5_0
+#if NET5_0_OR_GREATER
         internal const DynamicallyAccessedMemberTypes InterceptorAccessibility = DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicMethods;
 #endif
 
         internal object[] _args;
 
         internal InterceptorRegistration(
-#if NET5_0
+#if NET5_0_OR_GREATER
             [DynamicallyAccessedMembers(InterceptorAccessibility)]
 #endif
             Type type, object[] arguments)
@@ -65,7 +62,7 @@ namespace Grpc.AspNetCore.Server
         /// <summary>
         /// Get the type of the interceptor.
         /// </summary>
-#if NET5_0
+#if NET5_0_OR_GREATER
         [DynamicallyAccessedMembers(InterceptorAccessibility)]
 #endif
         public Type Type { get; }
@@ -78,6 +75,10 @@ namespace Grpc.AspNetCore.Server
         private IGrpcInterceptorActivator? _interceptorActivator;
         private ObjectFactory? _factory;
 
+#if NET5_0_OR_GREATER
+        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:UnrecognizedReflectionPattern",
+            Justification = "Type parameter members are preserved with DynamicallyAccessedMembers on InterceptorRegistration.Type property.")]
+#endif
         internal IGrpcInterceptorActivator GetActivator(IServiceProvider serviceProvider)
         {
             // Not thread safe. Side effect is resolving the service twice.

@@ -16,9 +16,6 @@
 
 #endregion
 
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Greet;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Core;
@@ -29,9 +26,18 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Client
 {
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http3WithTls)]
+#endif
     public class TrailerMetadataTests : GrpcWebFunctionalTestBase
     {
         public TrailerMetadataTests(GrpcTestMode grpcTestMode, TestServerEndpointName endpointName)

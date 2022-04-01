@@ -16,8 +16,6 @@
 
 #endregion
 
-using System;
-using System.Net.Http;
 using Grpc.Net.Client;
 
 namespace Grpc.Shared
@@ -26,7 +24,7 @@ namespace Grpc.Shared
     {
         public static HttpMessageHandler CreatePrimaryHandler()
         {
-#if NET5_0
+#if NET5_0_OR_GREATER
             // If we're in .NET 5 and SocketsHttpHandler is supported (it's not in Blazor WebAssembly)
             // then create SocketsHttpHandler with EnableMultipleHttp2Connections set to true. That will
             // allow a gRPC channel to create new connections if the maximum allow concurrency is exceeded.
@@ -57,11 +55,14 @@ namespace Grpc.Shared
             // HttpClientHandler has an internal handler that sets request telemetry header.
             // If the handler is SocketsHttpHandler then we know that the header will never be set
             // so wrap with a handler that is responsible for setting the telemetry header.
-            if (HasHttpHandlerType(handler, "System.Net.Http.SocketsHttpHandler"))
+            if (HttpRequestHelpers.HasHttpHandlerType<SocketsHttpHandler>(handler))
             {
                 // Double check telemetry handler hasn't already been added by something else
                 // like the client factory when it created the primary handler.
-                if (!HasHttpHandlerType(handler, typeof(TelemetryHeaderHandler).FullName!))
+                //
+                // Check with type name because this handler can come from shared source
+                // in multiple assemblies.
+                if (!HttpRequestHelpers.HasHttpHandlerType(handler, typeof(TelemetryHeaderHandler).FullName!))
                 {
                     return new TelemetryHeaderHandler(handler);
                 }
@@ -70,26 +71,5 @@ namespace Grpc.Shared
             return handler;
         }
 #endif
-
-        public static bool HasHttpHandlerType(HttpMessageHandler handler, string handlerTypeName)
-        {
-            if (handler?.GetType().FullName == handlerTypeName)
-            {
-                return true;
-            }
-
-            HttpMessageHandler? currentHandler = handler;
-            while (currentHandler is DelegatingHandler delegatingHandler)
-            {
-                currentHandler = delegatingHandler.InnerHandler;
-
-                if (currentHandler?.GetType().FullName == handlerTypeName)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
     }
 }

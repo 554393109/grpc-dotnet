@@ -16,15 +16,13 @@
 
 #endregion
 
-using System;
-using System.Threading.Tasks;
 
 namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
 {
     public class ListenerSubscription : IDisposable
     {
         private readonly TestEventListener _testEventListener;
-        private TaskCompletionSource<object?> _tcs;
+        private readonly TaskCompletionSource<object?> _tcs;
 
         public ListenerSubscription(TestEventListener testEventListener, string counterName, long expectedValue)
         {
@@ -41,6 +39,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
 
         // Set the last value encountered for debugging purposes
         public long? LastValue { get; internal set; }
+        public int CheckCount { get; internal set; }
 
         public void Dispose()
         {
@@ -51,5 +50,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
         {
             _tcs.TrySetResult(null);
         }
+
+        internal bool IsMatched => _tcs.Task.IsCompletedSuccessfully;
     }
 }

@@ -16,9 +16,6 @@
 
 #endregion
 
-using System;
-using System.IO;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
@@ -60,9 +57,9 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
                 _categoryName = categoryName;
             }
 
-            public IDisposable? BeginScope<TState>(TState state)
+            public IDisposable BeginScope<TState>(TState state)
             {
-                return null;
+                return null!;
             }
 
             public bool IsEnabled(LogLevel logLevel)
@@ -70,7 +67,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
                 return true;
             }
 
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             {
                 // Log using the passed in execution context.
                 // In the case of NUnit, console output is only captured by the test

@@ -16,12 +16,7 @@
 
 #endregion
 
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Globalization;
 using Greet;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Core;
@@ -71,7 +66,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             Assert.AreEqual("Failed to deserialize response message.", call.GetStatus().Detail);
         }
 
-#if NET5_0
+#if NET5_0_OR_GREATER
         [Test]
         public async Task MaxConcurrentStreams_StartConcurrently_AdditionalConnectionsCreated()
         {
@@ -143,7 +138,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
                 // Act
                 for (var i = 0; i < calls.Length; i++)
                 {
-                    var call = client.UnaryCall(new HelloRequest { Name = (i + 1).ToString() });
+                    var call = client.UnaryCall(new HelloRequest { Name = (i + 1).ToString(CultureInfo.InvariantCulture) });
                     calls[i] = call;
 
                     if (writeResponseHeaders)

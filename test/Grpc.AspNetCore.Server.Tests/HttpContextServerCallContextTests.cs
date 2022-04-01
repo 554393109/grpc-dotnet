@@ -16,17 +16,11 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.IO.Pipelines;
-using System.Linq;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Grpc.AspNetCore.Server.Internal;
 using Grpc.AspNetCore.Server.Tests.Infrastructure;
 using Grpc.Core;
@@ -199,7 +193,7 @@ namespace Grpc.AspNetCore.Server.Tests
             httpContext.Response.ConsolidateTrailers(serverCallContext);
 
             // Assert
-            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>().Trailers;
+            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>()!.Trailers;
 
             Assert.AreEqual(2, responseTrailers.Count);
             Assert.AreEqual(expectedTrailerValue, responseTrailers[expectedTrailerName].ToString());
@@ -221,7 +215,7 @@ namespace Grpc.AspNetCore.Server.Tests
             httpContext.Response.ConsolidateTrailers(serverCallContext);
 
             // Assert
-            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>().Trailers;
+            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>()!.Trailers;
 
             Assert.AreEqual(2, responseTrailers.Count);
             Assert.AreEqual(StatusCode.Internal.ToString("D"), responseTrailers[GrpcProtocolConstants.StatusTrailer]);
@@ -266,7 +260,7 @@ namespace Grpc.AspNetCore.Server.Tests
             httpContext.Response.ConsolidateTrailers(serverCallContext);
 
             // Assert
-            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>().Trailers;
+            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>()!.Trailers;
 
             Assert.AreEqual(2, responseTrailers.Count);
             Assert.AreEqual(StatusCode.Internal.ToString("D"), responseTrailers[GrpcProtocolConstants.StatusTrailer]);
@@ -290,7 +284,7 @@ namespace Grpc.AspNetCore.Server.Tests
             httpContext.Response.ConsolidateTrailers(serverCallContext);
 
             // Assert
-            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>().Trailers;
+            var responseTrailers = httpContext.Features.Get<IHttpResponseTrailersFeature>()!.Trailers;
 
             Assert.AreEqual(2, responseTrailers.Count);
             Assert.AreEqual(StatusCode.OK.ToString("D"), responseTrailers[GrpcProtocolConstants.StatusTrailer]);
@@ -608,29 +602,48 @@ namespace Grpc.AspNetCore.Server.Tests
             Assert.AreEqual(addedToRequestHeaders, headerAdded);
         }
 
-        [Test]
-        public Task EndCallAsync_LongRunningDeadlineAbort_WaitsUntilDeadlineAbortIsFinished()
+        [TestCase("HTTP/2", GrpcProtocolConstants.Http2ResetStreamCancel)]
+#if NET6_0_OR_GREATER
+        [TestCase("HTTP/3", GrpcProtocolConstants.Http3ResetStreamCancel)]
+#endif
+        public Task EndCallAsync_LongRunningDeadlineAbort_WaitsUntilDeadlineAbortIsFinished(
+            string protocol,
+            int expectedResetCode)
         {
             return LongRunningDeadline_WaitsUntilDeadlineIsFinished(
                 nameof(HttpContextServerCallContext.EndCallAsync),
-                context => context.EndCallAsync());
+                context => context.EndCallAsync(),
+                protocol,
+                expectedResetCode);
         }
 
-        [Test]
-        public Task ProcessHandlerErrorAsync_LongRunningDeadlineAbort_WaitsUntilDeadlineAbortIsFinished()
+        [TestCase("HTTP/2", GrpcProtocolConstants.Http2ResetStreamCancel)]
+#if NET6_0_OR_GREATER
+        [TestCase("HTTP/3", GrpcProtocolConstants.Http3ResetStreamCancel)]
+#endif
+        public Task ProcessHandlerErrorAsync_LongRunningDeadlineAbort_WaitsUntilDeadlineAbortIsFinished(
+            string protocol,
+            int expectedResetCode)
         {
             return LongRunningDeadline_WaitsUntilDeadlineIsFinished(
                 nameof(HttpContextServerCallContext.ProcessHandlerErrorAsync),
-                context => context.ProcessHandlerErrorAsync(new Exception(), "Method!"));
+                context => context.ProcessHandlerErrorAsync(new Exception(), "Method!"),
+                protocol,
+                expectedResetCode);
         }
 
-        private async Task LongRunningDeadline_WaitsUntilDeadlineIsFinished(string methodName, Func<HttpContextServerCallContext, Task> method)
+        private async Task LongRunningDeadline_WaitsUntilDeadlineIsFinished(
+            string methodName,
+            Func<HttpContextServerCallContext, Task> method,
+            string protocol,
+            int expectedResetCode)
         {
             // Arrange
             var syncPoint = new SyncPoint();
 
             var httpResetFeature = new TestHttpResetFeature();
             var httpContext = new DefaultHttpContext();
+            httpContext.Request.Protocol = protocol;
             httpContext.Request.Headers[GrpcProtocolConstants.TimeoutHeader] = "200m";
             httpContext.Features.Set<IHttpResponseBodyFeature>(new TestBlockingHttpResponseCompletionFeature(syncPoint));
             httpContext.Features.Set<IHttpResetFeature>(httpResetFeature);
@@ -640,13 +653,13 @@ namespace Grpc.AspNetCore.Server.Tests
 
             // Wait until CompleteAsync is called
             // That means we're inside the deadline method and the lock has been taken
-            await syncPoint.WaitForSyncPoint();
+            await syncPoint.WaitForSyncPoint().DefaultTimeout();
 
             // Act
             var methodTask = method(serverCallContext);
 
             // Assert
-            if (await Task.WhenAny(methodTask, Task.Delay(TimeSpan.FromSeconds(0.2))) == methodTask)
+            if (await Task.WhenAny(methodTask, Task.Delay(TimeSpan.FromSeconds(0.2))).DefaultTimeout() == methodTask)
             {
                 Assert.Fail($"{methodName} did not wait on lock taken by deadline cancellation.");
             }
@@ -657,7 +670,7 @@ namespace Grpc.AspNetCore.Server.Tests
             syncPoint.Continue();
             await methodTask.DefaultTimeout();
 
-            Assert.AreEqual(GrpcProtocolConstants.ResetStreamNoError, httpResetFeature.ErrorCode);
+            Assert.AreEqual(expectedResetCode, httpResetFeature.ErrorCode);
 
             Assert.IsTrue(serverCallContext.DeadlineManager!.IsCallComplete);
         }

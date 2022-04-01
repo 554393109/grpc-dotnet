@@ -16,8 +16,6 @@
 
 #endregion
 
-using System;
-using System.Threading.Tasks;
 using Grpc.Core;
 
 namespace Grpc.AspNetCore.Server.Internal
@@ -38,7 +36,7 @@ namespace Grpc.AspNetCore.Server.Internal
             _writeLock = new object();
         }
 
-        public WriteOptions WriteOptions
+        public WriteOptions? WriteOptions
         {
             get => _context.WriteOptions;
             set => _context.WriteOptions = value;

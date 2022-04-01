@@ -16,9 +16,7 @@
 
 #endregion
 
-using System;
-using System.Threading.Tasks;
-using Google.Protobuf;
+using System.Globalization;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Net.Client;
 using Grpc.Tests.Shared;
@@ -29,9 +27,18 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Client
 {
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http3WithTls)]
+#endif
     public class IssueTests : GrpcWebFunctionalTestBase
     {
         public IssueTests(GrpcTestMode grpcTestMode, TestServerEndpointName endpointName)
@@ -57,7 +64,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Client
             request.SearchTerm = string.Empty;
             for (var i = 0; i < 4096; i++)
             {
-                request.Carriers.Add(i.ToString());
+                request.Carriers.Add(i.ToString(CultureInfo.InvariantCulture));
             }
 
             try

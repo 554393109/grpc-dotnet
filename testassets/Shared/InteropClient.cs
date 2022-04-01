@@ -16,14 +16,7 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
-using System.Threading;
-using System.Threading.Tasks;
 using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -57,6 +50,7 @@ namespace Grpc.Shared.TestAssets
         public string? ServiceAccountKeyFile { get; set; }
         public string? GrpcWebMode { get; set; }
         public bool UseWinHttp { get; set; }
+        public bool UseHttp3 { get; set; }
     }
 
     public class InteropClient
@@ -132,6 +126,14 @@ namespace Grpc.Shared.TestAssets
                     HttpVersion = new Version(1, 1)
                 };
             }
+            if (options.UseHttp3)
+            {
+#if NET6_0_OR_GREATER
+                httpMessageHandler = new Http3DelegatingHandler(httpMessageHandler);
+#else
+                throw new Exception("HTTP/3 requires .NET 6 or later.");
+#endif
+            }
 
             var channel = GrpcChannel.ForAddress($"{scheme}://{options.ServerHost}:{options.ServerPort}", new GrpcChannelOptions
             {
@@ -142,6 +144,25 @@ namespace Grpc.Shared.TestAssets
 
             return new GrpcChannelWrapper(channel);
         }
+
+#if NET6_0_OR_GREATER
+        private class Http3DelegatingHandler : DelegatingHandler
+        {
+            private static readonly Version Http3Version = new Version(3, 0);
+
+            public Http3DelegatingHandler(HttpMessageHandler innerHandler)
+            {
+                InnerHandler = innerHandler;
+            }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                request.Version = Http3Version;
+                request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+                return base.SendAsync(request, cancellationToken);
+            }
+        }
+#endif
 
         private static WinHttpHandler CreateWinHttpHandler()
         {
@@ -570,8 +591,8 @@ namespace Grpc.Shared.TestAssets
                 var responseHeaders = await call.ResponseHeadersAsync;
                 var responseTrailers = call.GetTrailers();
 
-                Assert.AreEqual("test_initial_metadata_value", responseHeaders.GetValue("x-grpc-test-echo-initial"));
-                CollectionAssert.AreEqual(new byte[] { 0xab, 0xab, 0xab }, responseTrailers.GetValueBytes("x-grpc-test-echo-trailing-bin"));
+                Assert.AreEqual("test_initial_metadata_value", responseHeaders.GetValue("x-grpc-test-echo-initial")!);
+                CollectionAssert.AreEqual(new byte[] { 0xab, 0xab, 0xab }, responseTrailers.GetValueBytes("x-grpc-test-echo-trailing-bin")!);
             }
 
             {
@@ -591,8 +612,8 @@ namespace Grpc.Shared.TestAssets
                 var responseHeaders = await call.ResponseHeadersAsync;
                 var responseTrailers = call.GetTrailers();
 
-                Assert.AreEqual("test_initial_metadata_value", responseHeaders.GetValue("x-grpc-test-echo-initial"));
-                CollectionAssert.AreEqual(new byte[] { 0xab, 0xab, 0xab }, responseTrailers.GetValueBytes("x-grpc-test-echo-trailing-bin"));
+                Assert.AreEqual("test_initial_metadata_value", responseHeaders.GetValue("x-grpc-test-echo-initial")!);
+                CollectionAssert.AreEqual(new byte[] { 0xab, 0xab, 0xab }, responseTrailers.GetValueBytes("x-grpc-test-echo-trailing-bin")!);
             }
         }
 
@@ -861,8 +882,8 @@ namespace Grpc.Shared.TestAssets
         // Consider providing ca file in a different format and removing method
         private byte[]? GetBytesFromPem(string pemString, string section)
         {
-            var header = string.Format("-----BEGIN {0}-----", section);
-            var footer = string.Format("-----END {0}-----", section);
+            var header = $"-----BEGIN {section}-----";
+            var footer = $"-----END {section}-----";
 
             var start = pemString.IndexOf(header, StringComparison.Ordinal);
             if (start == -1)

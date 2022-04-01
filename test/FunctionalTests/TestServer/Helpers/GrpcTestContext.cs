@@ -16,9 +16,7 @@
 
 #endregion
 
-using System;
 using System.Diagnostics;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.FunctionalTests.Helpers
@@ -37,7 +35,7 @@ namespace Tests.FunctionalTests.Helpers
             _fixture.LoggedMessage += WriteMessage;
         }
 
-        private void WriteMessage(LogLevel logLevel, string category, EventId eventId, string message, Exception exception)
+        private void WriteMessage(LogLevel logLevel, string category, EventId eventId, string message, Exception? exception)
         {
             // Log using the passed in execution context.
             // In the case of NUnit, console output is only captured by the test

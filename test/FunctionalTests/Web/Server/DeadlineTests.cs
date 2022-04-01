@@ -16,17 +16,11 @@
 
 #endregion
 
-using System;
-using System.IO;
 using System.IO.Pipelines;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
 using Greet;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.AspNetCore.Server.Internal;
 using Grpc.Core;
-using Grpc.Net.Client.Web;
 using Grpc.Tests.Shared;
 using NUnit.Framework;
 
@@ -34,9 +28,18 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Server
 {
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWeb, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http1)]
     [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.GrpcWebText, TestServerEndpointName.Http3WithTls)]
+#endif
     [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http2)]
+#if NET6_0_OR_GREATER
+    [TestFixture(GrpcTestMode.Grpc, TestServerEndpointName.Http3WithTls)]
+#endif
     public class DeadlineTests : GrpcWebFunctionalTestBase
     {
         public DeadlineTests(GrpcTestMode grpcTestMode, TestServerEndpointName endpointName)
@@ -90,15 +93,22 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Server
             MessageHelpers.WriteMessage(requestStream, requestMessage);
 
             var httpRequest = GrpcHttpHelper.Create(method.FullName);
-            httpRequest.Headers.Add(GrpcProtocolConstants.TimeoutHeader, "100m");
+            httpRequest.Headers.Add(GrpcProtocolConstants.TimeoutHeader, "300m");
             httpRequest.Content = new GrpcStreamContent(requestStream);
 
-            // Act
-            var response = await grpcWebClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).DefaultTimeout();
+            try
+            {
+                // Act
+                var response = await grpcWebClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).DefaultTimeout();
 
-            // Assert
-            response.AssertIsSuccessfulGrpcRequest();
-            response.AssertTrailerStatus(StatusCode.DeadlineExceeded, "Deadline Exceeded");
+                // Assert
+                response.AssertIsSuccessfulGrpcRequest();
+                response.AssertTrailerStatus(StatusCode.DeadlineExceeded, "Deadline Exceeded");
+            }
+            catch (Exception ex) when (Net.Client.Internal.GrpcProtocolHelpers.ResolveRpcExceptionStatusCode(ex) == StatusCode.Cancelled)
+            {
+                // Ignore exception from deadline abort
+            }
         }
 
         [Test]
@@ -159,41 +169,48 @@ namespace Grpc.AspNetCore.FunctionalTests.Web.Server
             httpRequest.Headers.Add(GrpcProtocolConstants.TimeoutHeader, "200m");
             httpRequest.Content = new GrpcStreamContent(requestStream);
 
-            // Act
-            var grpcWebClient = CreateGrpcWebClient();
-            var response = await grpcWebClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).DefaultTimeout();
-
-            // Assert
-            response.AssertIsSuccessfulGrpcRequest();
-
-            var responseStream = await response.Content.ReadAsStreamAsync().DefaultTimeout();
-            var pipeReader = PipeReader.Create(responseStream);
-
-            var messageCount = 0;
-
-            var readTask = Task.Run(async () =>
+            try
             {
-                while (true)
+                // Act
+                var grpcWebClient = CreateGrpcWebClient();
+                var response = await grpcWebClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).DefaultTimeout();
+
+                // Assert
+                response.AssertIsSuccessfulGrpcRequest();
+
+                var responseStream = await response.Content.ReadAsStreamAsync().DefaultTimeout();
+                var pipeReader = PipeReader.Create(responseStream);
+
+                var messageCount = 0;
+
+                var readTask = Task.Run(async () =>
                 {
-                    var greeting = await MessageHelpers.AssertReadStreamMessageAsync<HelloReply>(pipeReader).DefaultTimeout();
-
-                    if (greeting != null)
+                    while (true)
                     {
-                        Assert.AreEqual($"How are you World? {messageCount}", greeting.Message);
-                        messageCount++;
+                        var greeting = await MessageHelpers.AssertReadStreamMessageAsync<HelloReply>(pipeReader).DefaultTimeout();
+
+                        if (greeting != null)
+                        {
+                            Assert.AreEqual($"How are you World? {messageCount}", greeting.Message);
+                            messageCount++;
+                        }
+                        else
+                        {
+                            break;
+                        }
                     }
-                    else
-                    {
-                        break;
-                    }
-                }
 
-            });
+                });
 
-            await readTask.DefaultTimeout();
+                await readTask.DefaultTimeout();
 
-            Assert.AreNotEqual(0, messageCount);
-            response.AssertTrailerStatus(StatusCode.DeadlineExceeded, "Deadline Exceeded");
+                Assert.AreNotEqual(0, messageCount);
+                response.AssertTrailerStatus(StatusCode.DeadlineExceeded, "Deadline Exceeded");
+            }
+            catch (Exception ex) when (Net.Client.Internal.GrpcProtocolHelpers.ResolveRpcExceptionStatusCode(ex) == StatusCode.Cancelled)
+            {
+                // Ignore exception from deadline abort
+            }
 
             // The server has completed the response but is still running
             // Allow time for the server to complete

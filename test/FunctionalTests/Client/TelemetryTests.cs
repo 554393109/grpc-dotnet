@@ -16,15 +16,12 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net.Http;
-using System.Threading.Tasks;
 using Greet;
 using Grpc.AspNetCore.FunctionalTests.Infrastructure;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Grpc.Tests.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -41,7 +38,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             await TestTelemetryHeaderIsSet(clientType, handler: null);
         }
 
-#if NET5_0
+#if NET5_0_OR_GREATER
         [TestCase(ClientType.Channel)]
         [TestCase(ClientType.ClientFactory)]
         public async Task Channel_SocketsHttpHandler_UnaryCall_TelemetryHeaderSentWithRequest(ClientType clientType)
@@ -70,7 +67,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             Task<HelloReply> UnaryTelemetryHeader(HelloRequest request, ServerCallContext context)
             {
                 telemetryHeader = context.RequestHeaders.GetValue(
-#if NET5_0
+#if NET5_0_OR_GREATER
                     "traceparent"
 #else
                     "request-id"
@@ -85,7 +82,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             var client = CreateClient(clientType, method, handler);
 
             // Act
-#if NET5_0
+#if NET5_0_OR_GREATER
             var result = new List<KeyValuePair<string, object?>>();
 
             using var allSubscription = new AllListenersObserver(new Dictionary<string, IObserver<KeyValuePair<string, object?>>>
@@ -95,13 +92,13 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
             using (DiagnosticListener.AllListeners.Subscribe(allSubscription))
 #endif
             {
-                await client.UnaryCall(new HelloRequest());
+                await client.UnaryCall(new HelloRequest()).ResponseAsync.DefaultTimeout();
             }
 
             // Assert
             Assert.IsNotNull(telemetryHeader);
 
-#if NET5_0
+#if NET5_0_OR_GREATER
             Assert.AreEqual(4, result.Count);
             Assert.AreEqual("System.Net.Http.HttpRequestOut.Start", result[0].Key);
             Assert.AreEqual("System.Net.Http.Request", result[1].Key);
@@ -227,9 +224,9 @@ namespace Grpc.AspNetCore.FunctionalTests.Client
                 }
             }
 
-            private List<T> _output;
-            private Predicate<T>? _filter;
-            private string? _name;  // for debugging 
+            private readonly List<T> _output;
+            private readonly Predicate<T>? _filter;
+            private readonly string? _name;  // for debugging 
             #endregion
         }
     }

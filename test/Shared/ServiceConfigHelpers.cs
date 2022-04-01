@@ -16,8 +16,6 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using Grpc.Core;
 using Grpc.Net.Client.Configuration;
 
@@ -76,7 +74,7 @@ namespace Grpc.Tests.Shared
             var hedgingPolicy = new HedgingPolicy
             {
                 MaxAttempts = maxAttempts ?? 5,
-                HedgingDelay = hedgingDelay ?? TimeSpan.Zero
+                HedgingDelay = hedgingDelay
             };
 
             if (nonFatalStatusCodes != null)

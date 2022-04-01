@@ -16,12 +16,6 @@
 
 #endregion
 
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Shared;
 using Microsoft.Extensions.Logging;
@@ -56,11 +50,7 @@ namespace Grpc.Net.Client.Internal
             HttpResponseTcs = new TaskCompletionSource<(HttpResponseMessage, Status?)>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        // IAsyncStreamReader<T> should declare Current as nullable
-        // Suppress warning when overriding interface definition
-#pragma warning disable CS8613, CS8766 // Nullability of reference types in return type doesn't match implicitly implemented member.
-        public TResponse? Current { get; private set; }
-#pragma warning restore CS8613, CS8766 // Nullability of reference types in return type doesn't match implicitly implemented member.
+        public TResponse Current { get; private set; } = default!;
 
         public void Dispose()
         {
@@ -145,7 +135,7 @@ namespace Grpc.Net.Client.Internal
                 {
                     try
                     {
-#if NET5_0
+#if NET5_0_OR_GREATER
                         _responseStream = await _httpResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #else
                         _responseStream = await _httpResponse.Content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -162,26 +152,29 @@ namespace Grpc.Net.Client.Internal
 
                 CompatibilityHelpers.Assert(_grpcEncoding != null, "Encoding should have been calculated from response.");
 
-                Current = await _call.ReadMessageAsync(
+                var readMessage = await _call.ReadMessageAsync(
                     _responseStream,
                     _grpcEncoding,
                     singleMessage: false,
                     _call.CancellationToken).ConfigureAwait(false);
-                if (Current == null)
+
+                if (readMessage == null)
                 {
                     // No more content in response so report status to call.
                     // The call will handle finishing the response.
-                    var status = GrpcProtocolHelpers.GetResponseStatus(_httpResponse, _call.Channel.OperatingSystem.IsBrowser, _call.Channel.IsWinHttp);
+                    var status = GrpcProtocolHelpers.GetResponseStatus(_httpResponse, _call.Channel.OperatingSystem.IsBrowser, _call.Channel.HttpHandlerType == HttpHandlerType.WinHttpHandler);
                     _call.ResponseStreamEnded(status, finishedGracefully: true);
                     if (status.StatusCode != StatusCode.OK)
                     {
                         throw _call.CreateFailureStatusException(status);
                     }
 
+                    Current = null!;
                     return false;
                 }
 
                 GrpcEventSource.Log.MessageReceived();
+                Current = readMessage!;
                 return true;
             }
             catch (OperationCanceledException ex)

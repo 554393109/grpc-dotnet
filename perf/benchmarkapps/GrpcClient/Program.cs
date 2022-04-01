@@ -16,23 +16,16 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
+using System.Globalization;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -51,17 +44,17 @@ namespace GrpcClient
         private static List<List<double>> _latencyPerConnection = null!;
         private static int _callsStarted;
         private static double _maxLatency;
-        private static Stopwatch _workTimer = new Stopwatch();
+        private static readonly Stopwatch _workTimer = new Stopwatch();
         private static volatile bool _warmingUp;
         private static volatile bool _stopped;
-        private static SemaphoreSlim _lock = new SemaphoreSlim(1);
+        private static readonly SemaphoreSlim _lock = new SemaphoreSlim(1);
         private static List<(double sum, int count)> _latencyAverage = null!;
         private static int _totalRequests;
         private static ClientOptions _options = null!;
         private static ILoggerFactory? _loggerFactory;
         private static SslCredentials? _credentials;
-        private static StringBuilder _errorStringBuilder = new StringBuilder();
-        private static CancellationTokenSource _cts = new CancellationTokenSource();
+        private static readonly StringBuilder _errorStringBuilder = new StringBuilder();
+        private static readonly CancellationTokenSource _cts = new CancellationTokenSource();
 
         public static async Task<int> Main(string[] args)
         {
@@ -178,7 +171,7 @@ namespace GrpcClient
                 var text = "Exception from test: " + ex.Message;
                 Log(text);
                 _errorStringBuilder.AppendLine();
-                _errorStringBuilder.Append($"[{DateTime.Now:hh:mm:ss.fff}] {text}");
+                _errorStringBuilder.Append(CultureInfo.InvariantCulture, $"[{DateTime.Now:hh:mm:ss.fff}] {text}");
             }
         }
 
@@ -385,7 +378,7 @@ namespace GrpcClient
 
         private static ChannelBase CreateChannel(string target)
         {
-            var useTls = _options.Protocol == "h2";
+            var useTls = _options.Protocol == "h2" || _options.Protocol == "h3";
 
             switch (_options.GrpcClientType)
             {
@@ -407,6 +400,7 @@ namespace GrpcClient
 #if NETCOREAPP3_1
                     AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 #endif
+
                     var httpClientHandler = new SocketsHttpHandler();
                     httpClientHandler.UseProxy = false;
                     httpClientHandler.AllowAutoRedirect = false;
@@ -420,7 +414,7 @@ namespace GrpcClient
                             clientCertificate
                         };
                     }
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
                     if (!string.IsNullOrEmpty(_options.UdsFileName))
                     {
                         var connectionFactory = new UnixDomainSocketConnectionFactory(new UnixDomainSocketEndPoint(ResolveUdsPath(_options.UdsFileName)));
@@ -431,12 +425,19 @@ namespace GrpcClient
                     httpClientHandler.SslOptions.RemoteCertificateValidationCallback =
                         (object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors) => true;
 
+                    HttpMessageHandler httpMessageHandler = httpClientHandler;
+
+                    if (_options.Protocol == "h3")
+                    {
+                        httpMessageHandler = new Http3DelegatingHandler(httpMessageHandler);
+                    }
+
                     return GrpcChannel.ForAddress(address, new GrpcChannelOptions
                     {
-#if NET5_0 || NET6_0
-                        HttpHandler = httpClientHandler,
+#if NET5_0_OR_GREATER
+                        HttpHandler = httpMessageHandler,
 #else
-                        HttpClient = new HttpClient(httpClientHandler),
+                        HttpClient = new HttpClient(httpMessageHandler),
 #endif
                         LoggerFactory = _loggerFactory
                     });
@@ -463,7 +464,7 @@ namespace GrpcClient
 
         private static void Log(string message)
         {
-            var time = DateTime.Now.ToString("hh:mm:ss.fff");
+            var time = DateTime.Now.ToString("hh:mm:ss.fff", CultureInfo.InvariantCulture);
             Console.WriteLine($"[{time}] {message}");
         }
 
@@ -673,6 +674,23 @@ namespace GrpcClient
             }
 
             return false;
+        }
+
+        private class Http3DelegatingHandler : DelegatingHandler
+        {
+            private static readonly Version Http3Version = new Version(3, 0);
+
+            public Http3DelegatingHandler(HttpMessageHandler innerHandler)
+            {
+                InnerHandler = innerHandler;
+            }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                request.Version = Http3Version;
+                request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+                return base.SendAsync(request, cancellationToken);
+            }
         }
     }
 }

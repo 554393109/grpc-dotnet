@@ -16,9 +16,9 @@
 
 #endregion
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics.Tracing;
+using System.Globalization;
+using Microsoft.Extensions.Logging;
 
 namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
 {
@@ -29,19 +29,25 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
     {
         private readonly object _lock = new object();
         private readonly List<ListenerSubscription> _subscriptions;
-
+        private readonly ILogger _logger;
         private readonly int _eventId;
+        private readonly EventSource _eventSource;
 
-        public TestEventListener(int eventId)
+        public TestEventListener(int eventId, ILoggerFactory loggerFactory, EventSource eventSource)
         {
             _eventId = eventId;
+            _eventSource = eventSource;
             _subscriptions = new List<ListenerSubscription>();
+            _logger = loggerFactory.CreateLogger<TestEventListener>();
         }
-
-        public EventWrittenEventArgs? EventData { get; private set; }
 
         protected override void OnEventWritten(EventWrittenEventArgs eventData)
         {
+            if (eventData.EventSource != _eventSource)
+            {
+                return;
+            }
+
             // Subscriptions change on multiple threads so make a local copy
             ListenerSubscription[]? subscriptions = null;
             lock (_lock)
@@ -66,18 +72,31 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
                 {
                     foreach (var subscription in subscriptions)
                     {
-                        if (subscription.CounterName == Convert.ToString(name))
+                        if (subscription.CounterName == Convert.ToString(name, CultureInfo.InvariantCulture))
                         {
-                            var currentValue = Convert.ToInt64(value);
-
-                            // For debugging. Printed in message if subscription fails.
-                            subscription.LastValue = currentValue;
+                            subscription.CheckCount++;
+                            var currentValue = Convert.ToInt64(value, CultureInfo.InvariantCulture);
 
                             if (subscription.ExpectedValue == currentValue)
                             {
+                                _logger.LogDebug($"Check {subscription.CheckCount}: {subscription.CounterName} current value {currentValue} matched expected {subscription.ExpectedValue}.");
+
                                 subscription.SetMatched();
                                 subscription.Dispose();
                             }
+                            else
+                            {
+                                if (!subscription.IsMatched)
+                                {
+                                    if (subscription.LastValue != currentValue || subscription.CheckCount % 1000 == 0)
+                                    {
+                                        _logger.LogDebug($"Check {subscription.CheckCount}: {subscription.CounterName} current value {currentValue} doesn't match expected {subscription.ExpectedValue}.");
+                                    }
+                                }
+                            }
+
+                            // For debugging. Printed in message if subscription fails.
+                            subscription.LastValue = currentValue;
                         }
                     }
                 }

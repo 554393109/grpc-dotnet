@@ -16,8 +16,6 @@
 
 #endregion
 
-using System;
-using System.Net.Http;
 
 namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
 {
@@ -27,7 +25,7 @@ namespace Grpc.AspNetCore.FunctionalTests.Infrastructure
         {
             var request = new HttpRequestMessage(method ?? HttpMethod.Post, url);
             request.Version = new Version(2, 0);
-#if NET5_0
+#if NET5_0_OR_GREATER
             request.VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
 #endif
 

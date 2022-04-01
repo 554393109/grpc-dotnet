@@ -16,20 +16,13 @@
 
 #endregion
 
-using System;
-using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using Grpc.Shared;
 using Grpc.Testing;
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
 using Microsoft.AspNetCore.Authentication.Certificate;
 #endif
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 
 namespace GrpcAspNetCoreServer
@@ -47,7 +40,7 @@ namespace GrpcAspNetCoreServer
         {
             services.AddGrpc(o =>
             {
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
                 // Small performance benefit to not add catch-all routes to handle UNIMPLEMENTED for unknown services
                 o.IgnoreUnknownServices = true;
 #endif
@@ -60,7 +53,7 @@ namespace GrpcAspNetCoreServer
             services.AddSingleton<BenchmarkServiceImpl>();
             services.AddControllers();
 
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
             bool.TryParse(_config["enableCertAuth"], out var enableCertAuth);
             if (enableCertAuth)
             {
@@ -83,7 +76,7 @@ namespace GrpcAspNetCoreServer
 
             app.UseRouting();
 
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
             bool.TryParse(_config["enableCertAuth"], out var enableCertAuth);
             if (enableCertAuth)
             {
@@ -108,7 +101,7 @@ namespace GrpcAspNetCoreServer
                 ConfigureAuthorization(endpoints.MapGrpcService<BenchmarkServiceImpl>());
 
                 ConfigureAuthorization(endpoints.MapControllers());
-                
+
                 ConfigureAuthorization(endpoints.MapGet("/", context =>
                 {
                     return context.Response.WriteAsync("Benchmark Server");
@@ -139,7 +132,7 @@ namespace GrpcAspNetCoreServer
 
         private void ConfigureAuthorization(IEndpointConventionBuilder builder)
         {
-#if NET5_0 || NET6_0
+#if NET5_0_OR_GREATER
             bool.TryParse(_config["enableCertAuth"], out var enableCertAuth);
             if (enableCertAuth)
             {
